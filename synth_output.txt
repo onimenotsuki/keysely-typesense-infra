@@ -1,0 +1,38 @@
+/Users/edgar.talledos/Documents/Projects/Personal/Ofikai/keysely-typesense-deploy/node_modules/aws-cdk-lib/core/lib/feature-flags.js:1
+"use strict";Object.defineProperty(exports,"__esModule",{value:!0}),exports.FeatureFlags=void 0;const JSII_RTTI_SYMBOL_1=Symbol.for("jsii.rtti");var constructs_1=()=>{var tmp=require("constructs");return constructs_1=()=>tmp,tmp},errors_1=()=>{var tmp=require("./errors");return errors_1=()=>tmp,tmp},cxapi=()=>{var tmp=require("../../cx-api");return cxapi=()=>tmp,tmp};class FeatureFlags{construct;static[JSII_RTTI_SYMBOL_1]={fqn:"aws-cdk-lib.FeatureFlags",version:"2.231.0"};static of(scope){return new FeatureFlags(scope)}constructor(construct){this.construct=construct}isEnabled(featureFlag){const context=constructs_1().Node.of(this.construct).tryGetContext(featureFlag);if(cxapi().CURRENT_VERSION_EXPIRED_FLAGS.includes(featureFlag)){if(context!==void 0)throw new(errors_1()).UnscopedValidationError(`Unsupported feature flag '${featureFlag}'. This flag existed on CDKv1 but has been removed in CDKv2. CDK will now behave as the same as when the flag is enabled.`);return!0}return context!==void 0?!!context:cxapi().futureFlagDefault(featureFlag)}}exports.FeatureFlags=FeatureFlags;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ^
+UnscopedValidationError: Unsupported feature flag '@aws-cdk/aws-secretsmanager:parseOwnedSecretName'. This flag existed on CDKv1 but has been removed in CDKv2. CDK will now behave as the same as when the flag is enabled.
+    at path [undefined]
+
+    at FeatureFlags.isEnabled (/Users/edgar.talledos/Documents/Projects/Personal/Ofikai/keysely-typesense-deploy/node_modules/aws-cdk-lib/core/lib/feature-flags.js:1:767)
+    at new Secret2 (/Users/edgar.talledos/Documents/Projects/Personal/Ofikai/keysely-typesense-deploy/node_modules/aws-cdk-lib/aws-secretsmanager/lib/secret.js:1:13883)
+    at new Secret2 (/Users/edgar.talledos/Documents/Projects/Personal/Ofikai/keysely-typesense-deploy/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)
+    at new TypesenseStack (/Users/edgar.talledos/Documents/Projects/Personal/Ofikai/keysely-typesense-deploy/lib/typesense-stack.ts:26:26)
+    at Object.<anonymous> (/Users/edgar.talledos/Documents/Projects/Personal/Ofikai/keysely-typesense-deploy/bin/app.ts:9:1)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module.m._compile (/Users/edgar.talledos/Documents/Projects/Personal/Ofikai/keysely-typesense-deploy/node_modules/ts-node/src/index.ts:1618:23)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (/Users/edgar.talledos/Documents/Projects/Personal/Ofikai/keysely-typesense-deploy/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+
+NOTICES         (What's this? https://github.com/aws/aws-cdk/wiki/CLI-Notices)
+
+34892	CDK CLI will collect telemetry data on command usage starting at version 2.1100.0 (unless opted out)
+
+	Overview: We do not collect customer content and we anonymize the
+	          telemetry we do collect. See the attached issue for more
+	          information on what data is collected, why, and how to
+	          opt-out. Telemetry will NOT be collected for any CDK CLI
+	          version prior to version 2.1100.0 - regardless of
+	          opt-in/out. You can also preview the telemetry we will start
+	          collecting by logging it to a local file, by adding
+	          `--unstable=telemetry --telemetry-file=my/local/file` to any
+	          `cdk` command.
+
+	Affected versions: cli: ^2.0.0
+
+	More information at: https://github.com/aws/aws-cdk/issues/34892
+
+
+If you don’t want to see a notice anymore, use "cdk acknowledge <id>". For example, "cdk acknowledge 34892".
+npx ts-node --prefer-ts-exts bin/app.ts: Subprocess exited with error 1
