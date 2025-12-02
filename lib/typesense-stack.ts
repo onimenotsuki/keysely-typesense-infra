@@ -3,6 +3,7 @@ import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -54,12 +55,36 @@ export class TypesenseStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY, // For dev/stage, maybe RETAIN for prod
     });
 
-    // 5. Auto Scaling Group (EC2 Launch Type for Free Tier)
-    // t3.micro is free tier eligible (750 hours/month)
-    const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'typesense-asg', {
+    // 5. Security Group
+    const securityGroup = new ec2.SecurityGroup(this, 'typesense-sg', {
       vpc,
+      description: 'Security Group for Typesense Instances',
+      allowAllOutbound: true,
+    });
+
+    // 6. Launch Template (Replaces Launch Configuration)
+    const userData = ec2.UserData.forLinux();
+    userData.addCommands(`echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`);
+
+    const launchTemplate = new ec2.LaunchTemplate(this, 'typesense-launch-template', {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+      userData,
+      role: new iam.Role(this, 'typesense-instance-role', {
+        assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName(
+            'service-role/AmazonEC2ContainerServiceforEC2Role',
+          ),
+        ],
+      }),
+      securityGroup,
+    });
+
+    // 7. Auto Scaling Group
+    const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'typesense-asg', {
+      vpc,
+      launchTemplate,
       minCapacity: 1,
       maxCapacity: 1, // Keep to 1 to stay within free tier
       vpcSubnets: {
