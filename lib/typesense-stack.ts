@@ -79,7 +79,7 @@ export class TypesenseStack extends cdk.Stack {
 
       // Task Definition
       const taskDefinition = new ecs.Ec2TaskDefinition(this, 'typesense-task-def', {
-        networkMode: ecs.NetworkMode.AWS_VPC,
+        networkMode: ecs.NetworkMode.BRIDGE,
       });
 
       const container = taskDefinition.addContainer('typesense-container', {
@@ -112,7 +112,7 @@ export class TypesenseStack extends cdk.Stack {
             weight: 1,
           },
         ],
-        assignPublicIp: true, // Needed for public subnet
+        // assignPublicIp is not supported for EC2 launch type with Bridge mode
       });
 
       // Allow access to port 8108
