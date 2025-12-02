@@ -2,8 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
-import * as iam from 'aws-cdk-lib/aws-iam';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -13,196 +12,167 @@ interface TypesenseStackProps extends cdk.StackProps {
 }
 
 export class TypesenseStack extends cdk.Stack {
+  public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
+
+  public readonly apiUrl: string;
+
   constructor(scope: Construct, id: string, props: TypesenseStackProps) {
     super(scope, id, props);
 
     const { environment } = props;
 
-    // VPC
+    // 1. VPC
     const vpc = new ec2.Vpc(this, 'typesense-vpc', {
       maxAzs: 2,
-      natGateways: environment === 'prod' ? 1 : 0, // No NAT Gateway for Dev/Stage to save costs
+      natGateways: environment === 'prod' ? 1 : 0, // NAT Gateway only for Prod
     });
 
-    // Secrets Manager for API Key
+    // 2. Secrets Manager for API Key
     const apiKeySecret = new secretsmanager.Secret(this, 'typesense-api-key', {
       description: 'API Key for Typesense',
       generateSecretString: {
-        secretStringTemplate: JSON.stringify({ apiKey: 'xyz' }), // Default value, should be rotated/changed
+        secretStringTemplate: JSON.stringify({ apiKey: 'xyz-default-key' }), // Default value, should be rotated
         generateStringKey: 'apiKey',
       },
     });
 
-    // ECS Cluster
+    // 3. ECS Cluster
     const cluster = new ecs.Cluster(this, 'typesense-cluster', {
       vpc,
+      clusterName: `keysely-typesense-cluster-${environment}`,
     });
 
-    // CloudWatch Log Group
+    // 4. CloudWatch Log Group
     const logGroup = new logs.LogGroup(this, 'typesense-log-group', {
       logGroupName: `/ecs/typesense-${environment}`,
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY, // For dev/stage, maybe RETAIN for prod
     });
 
-    if (environment === 'dev' || environment === 'stage') {
-      // Free Tier: ECS on EC2 (t2.micro)
+    // 5. Auto Scaling Group (EC2 Launch Type for Free Tier)
+    // t3.micro is free tier eligible (750 hours/month)
+    const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'typesense-asg', {
+      vpc,
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+      machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+      minCapacity: 1,
+      maxCapacity: 1, // Keep to 1 to stay within free tier
+      vpcSubnets: {
+        // In prod, use private subnets with NAT Gateway.
+        // In dev (free tier), use public subnets because we don't have a NAT Gateway.
+        subnetType:
+          environment === 'prod' ? ec2.SubnetType.PRIVATE_WITH_EGRESS : ec2.SubnetType.PUBLIC,
+      },
+      newInstancesProtectedFromScaleIn: false,
+    });
 
-      // User Data to register with ECS Cluster
-      const userData = ec2.UserData.forLinux();
-      userData.addCommands(
-        `echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`,
-        'mkdir -p /var/lib/typesense/data',
-        'chmod 777 /var/lib/typesense/data',
-      );
+    // 6. Capacity Provider
+    const capacityProvider = new ecs.AsgCapacityProvider(this, 'typesense-capacity-provider', {
+      autoScalingGroup,
+    });
+    cluster.addAsgCapacityProvider(capacityProvider);
 
-      // Launch Template
-      const launchTemplate = new ec2.LaunchTemplate(this, 'typesense-launch-template', {
-        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
-        machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
-        userData,
-        role: new iam.Role(this, 'typesense-instance-role', {
-          assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-          managedPolicies: [
-            iam.ManagedPolicy.fromAwsManagedPolicyName(
-              'service-role/AmazonEC2ContainerServiceforEC2Role',
-            ),
-          ],
-        }),
-      });
+    // 7. Task Definition
+    const taskDefinition = new ecs.Ec2TaskDefinition(this, 'typesense-task-def', {
+      networkMode: ecs.NetworkMode.BRIDGE,
+    });
 
-      // Auto Scaling Group
-      const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'typesense-asg', {
-        vpc,
-        launchTemplate,
-        minCapacity: 1,
-        maxCapacity: 1,
-        vpcSubnets: {
-          subnetType: ec2.SubnetType.PUBLIC, // Public subnet to avoid NAT Gateway costs
-        },
-        newInstancesProtectedFromScaleIn: false,
-      });
+    // Mount a volume for data (Ephemeral on EC2 instance store/root volume)
+    taskDefinition.addVolume({
+      name: 'typesense-data',
+      host: {
+        sourcePath: '/var/lib/typesense/data',
+      },
+    });
 
-      // Capacity Provider
-      const capacityProvider = new ecs.AsgCapacityProvider(this, 'asg-capacity-provider', {
-        autoScalingGroup,
-      });
-      cluster.addAsgCapacityProvider(capacityProvider);
+    const container = taskDefinition.addContainer('typesense-container', {
+      image: ecs.ContainerImage.fromRegistry('typesense/typesense:26.0'),
+      memoryLimitMiB: 512, // Leave some RAM for OS (Total 1024MB on t3.micro)
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'typesense',
+        logGroup,
+      }),
+      secrets: {
+        TYPESENSE_API_KEY: ecs.Secret.fromSecretsManager(apiKeySecret, 'apiKey'),
+      },
+      environment: {
+        TYPESENSE_DATA_DIR: '/data',
+        TYPESENSE_ENABLE_CORS: 'true',
+      },
+      command: ['--data-dir', '/data', '--enable-cors'],
+    });
 
-      // Task Definition
-      const taskDefinition = new ecs.Ec2TaskDefinition(this, 'typesense-task-def', {
-        networkMode: ecs.NetworkMode.BRIDGE,
-      });
+    container.addPortMappings({
+      containerPort: 8108,
+      hostPort: 8108,
+      protocol: ecs.Protocol.TCP,
+    });
 
-      taskDefinition.addVolume({
-        name: 'typesense-data',
-        host: {
-          sourcePath: '/var/lib/typesense/data',
-        },
-      });
+    container.addMountPoints({
+      containerPath: '/data',
+      sourceVolume: 'typesense-data',
+      readOnly: false,
+    });
 
-      const container = taskDefinition.addContainer('typesense-container', {
-        image: ecs.ContainerImage.fromRegistry('typesense/typesense:26.0'),
-        memoryLimitMiB: 768, // Reduced to fit in t3.micro (1024MiB) with overhead
-        cpu: 512, // 0.5 vCPU
-        logging: ecs.LogDrivers.awsLogs({
-          streamPrefix: 'Typesense',
-          logGroup,
-        }),
-        secrets: {
-          TYPESENSE_API_KEY: ecs.Secret.fromSecretsManager(apiKeySecret, 'apiKey'),
-        },
-        command: ['--data-dir', '/data', '--enable-cors'],
-        environment: {
-          TYPESENSE_DATA_DIR: '/data',
-        },
-      });
-
-      container.addMountPoints({
-        containerPath: '/data',
-        readOnly: false,
-        sourceVolume: 'typesense-data',
-      });
-
-      container.addPortMappings({
-        containerPort: 8108,
-        hostPort: 8108,
-      });
-
-      // Service
-      const service = new ecs.Ec2Service(this, 'typesense-service', {
-        cluster,
-        taskDefinition,
-        desiredCount: 1,
-        capacityProviderStrategies: [
-          {
-            capacityProvider: capacityProvider.capacityProviderName,
-            weight: 1,
-          },
-        ],
-        // assignPublicIp is not supported for EC2 launch type with Bridge mode
-      });
-
-      // Allow access to port 8108
-      service.connections.allowFromAnyIpv4(ec2.Port.tcp(8108), 'Allow Typesense API access');
-    } else {
-      // Production: ECS Fargate
-      const loadBalancedFargateService = new ecsPatterns.ApplicationLoadBalancedFargateService(
-        this,
-        'typesense-service',
+    // 8. Service
+    const service = new ecs.Ec2Service(this, 'typesense-service', {
+      cluster,
+      taskDefinition,
+      desiredCount: 1,
+      minHealthyPercent: 0, // Allow 0 during deployment to avoid needing 2 instances
+      maxHealthyPercent: 100,
+      healthCheckGracePeriod: cdk.Duration.seconds(120),
+      capacityProviderStrategies: [
         {
-          cluster,
-          cpu: 512,
-          memoryLimitMiB: 1024,
-          desiredCount: 2,
-          taskImageOptions: {
-            image: ecs.ContainerImage.fromRegistry('typesense/typesense:26.0'),
-            containerPort: 8108,
-            secrets: {
-              TYPESENSE_API_KEY: ecs.Secret.fromSecretsManager(apiKeySecret, 'apiKey'),
-            },
-            command: ['--data-dir', '/data', '--enable-cors'],
-            logDriver: ecs.LogDrivers.awsLogs({
-              streamPrefix: 'Typesense',
-              logGroup,
-            }),
-          },
-          publicLoadBalancer: true,
+          capacityProvider: capacityProvider.capacityProviderName,
+          weight: 1,
         },
-      );
+      ],
+    });
 
-      // Health check
-      loadBalancedFargateService.targetGroup.configureHealthCheck({
+    // 9. Load Balancer
+    this.loadBalancer = new elbv2.ApplicationLoadBalancer(this, 'typesense-alb', {
+      vpc,
+      internetFacing: true, // Public access as requested
+      loadBalancerName: `keysely-typesense-alb-${environment}`,
+    });
+
+    const listener = this.loadBalancer.addListener('typesense-listener', {
+      port: 80,
+    });
+
+    listener.addTargets('typesense-target', {
+      port: 80,
+      targets: [
+        service.loadBalancerTarget({
+          containerName: 'typesense-container',
+          containerPort: 8108,
+        }),
+      ],
+      healthCheck: {
         path: '/health',
-      });
+        interval: cdk.Duration.seconds(60),
+      },
+    });
 
-      new cdk.CfnOutput(this, 'typesense-load-balancer-dns', {
-        value: loadBalancedFargateService.loadBalancer.loadBalancerDnsName,
-        description: 'Typesense Load Balancer DNS Name',
-      });
-    }
+    // Allow ALB to connect to ASG on port 8108
+    autoScalingGroup.connections.allowFrom(
+      this.loadBalancer,
+      ec2.Port.tcp(8108),
+      'Allow ALB to connect to Typesense instances',
+    );
 
-    // Outputs for Secret
+    this.apiUrl = `http://${this.loadBalancer.loadBalancerDnsName}`;
+
+    // Outputs
+    new cdk.CfnOutput(this, 'typesense-api-url', {
+      value: this.apiUrl,
+      description: 'Typesense API URL',
+    });
+
     new cdk.CfnOutput(this, 'typesense-api-key-secret-arn', {
       value: apiKeySecret.secretArn,
       description: 'ARN of the Typesense API Key Secret',
     });
-
-    new cdk.CfnOutput(this, 'typesense-api-key-secret-name', {
-      value: apiKeySecret.secretName,
-      description: 'Name of the Typesense API Key Secret',
-    });
-
-    if (environment === 'dev' || environment === 'stage') {
-      new cdk.CfnOutput(this, 'typesense-cluster-name', {
-        value: cluster.clusterName,
-        description: 'Typesense ECS Cluster Name',
-      });
-
-      new cdk.CfnOutput(this, 'typesense-service-name', {
-        value: 'typesense-service', // Hardcoded as we named it explicitly
-        description: 'Typesense ECS Service Name',
-      });
-    }
   }
 }
