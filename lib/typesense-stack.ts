@@ -143,6 +143,34 @@ export class TypesenseStack extends cdk.Stack {
       loadBalancedFargateService.targetGroup.configureHealthCheck({
         path: '/health',
       });
+
+      new cdk.CfnOutput(this, 'typesense-load-balancer-dns', {
+        value: loadBalancedFargateService.loadBalancer.loadBalancerDnsName,
+        description: 'Typesense Load Balancer DNS Name',
+      });
+    }
+
+    // Outputs for Secret
+    new cdk.CfnOutput(this, 'typesense-api-key-secret-arn', {
+      value: apiKeySecret.secretArn,
+      description: 'ARN of the Typesense API Key Secret',
+    });
+
+    new cdk.CfnOutput(this, 'typesense-api-key-secret-name', {
+      value: apiKeySecret.secretName,
+      description: 'Name of the Typesense API Key Secret',
+    });
+
+    if (environment === 'dev' || environment === 'stage') {
+      new cdk.CfnOutput(this, 'typesense-cluster-name', {
+        value: cluster.clusterName,
+        description: 'Typesense ECS Cluster Name',
+      });
+
+      new cdk.CfnOutput(this, 'typesense-service-name', {
+        value: 'typesense-service', // Hardcoded as we named it explicitly
+        description: 'Typesense ECS Service Name',
+      });
     }
   }
 }

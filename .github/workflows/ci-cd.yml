@@ -68,10 +68,14 @@ jobs:
           CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
           CDK_DEFAULT_ENVIRONMENT: dev
-        run: npx cdk bootstrap aws://${{ env.CDK_DEFAULT_ACCOUNT }}/${{ env.CDK_DEFAULT_REGION }}
-
-      - name: Check bootstrap
         run: npx cdk bootstrap --show
+
+      - name: Synthesize
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+          CDK_DEFAULT_ENVIRONMENT: dev
+        run: npx cdk synth
 
       - name: Deploy
         env:
