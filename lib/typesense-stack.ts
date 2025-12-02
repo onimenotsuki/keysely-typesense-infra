@@ -4,6 +4,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 
@@ -35,6 +36,13 @@ export class TypesenseStack extends cdk.Stack {
     // ECS Cluster
     const cluster = new ecs.Cluster(this, 'typesense-cluster', {
       vpc,
+    });
+
+    // CloudWatch Log Group
+    const logGroup = new logs.LogGroup(this, 'typesense-log-group', {
+      logGroupName: `/ecs/typesense-${environment}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // For dev/stage, maybe RETAIN for prod
     });
 
     if (environment === 'dev' || environment === 'stage') {
@@ -97,7 +105,10 @@ export class TypesenseStack extends cdk.Stack {
         image: ecs.ContainerImage.fromRegistry('typesense/typesense:26.0'),
         memoryLimitMiB: 900, // t2.micro has 1GB, reserving some for OS/Agent
         cpu: 512, // 0.5 vCPU
-        logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'Typesense' }),
+        logging: ecs.LogDrivers.awsLogs({
+          streamPrefix: 'Typesense',
+          logGroup,
+        }),
         secrets: {
           TYPESENSE_API_KEY: ecs.Secret.fromSecretsManager(apiKeySecret, 'apiKey'),
         },
@@ -151,6 +162,10 @@ export class TypesenseStack extends cdk.Stack {
               TYPESENSE_API_KEY: ecs.Secret.fromSecretsManager(apiKeySecret, 'apiKey'),
             },
             command: ['--data-dir', '/data', '--enable-cors'],
+            logDriver: ecs.LogDrivers.awsLogs({
+              streamPrefix: 'Typesense',
+              logGroup,
+            }),
           },
           publicLoadBalancer: true,
         },
