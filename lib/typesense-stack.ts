@@ -42,7 +42,11 @@ export class TypesenseStack extends cdk.Stack {
 
       // User Data to register with ECS Cluster
       const userData = ec2.UserData.forLinux();
-      userData.addCommands(`echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`);
+      userData.addCommands(
+        `echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`,
+        'mkdir -p /var/lib/typesense/data',
+        'chmod 777 /var/lib/typesense/data',
+      );
 
       // Launch Template
       const launchTemplate = new ec2.LaunchTemplate(this, 'typesense-launch-template', {
@@ -82,6 +86,13 @@ export class TypesenseStack extends cdk.Stack {
         networkMode: ecs.NetworkMode.BRIDGE,
       });
 
+      taskDefinition.addVolume({
+        name: 'typesense-data',
+        host: {
+          sourcePath: '/var/lib/typesense/data',
+        },
+      });
+
       const container = taskDefinition.addContainer('typesense-container', {
         image: ecs.ContainerImage.fromRegistry('typesense/typesense:26.0'),
         memoryLimitMiB: 900, // t2.micro has 1GB, reserving some for OS/Agent
@@ -94,6 +105,12 @@ export class TypesenseStack extends cdk.Stack {
         environment: {
           TYPESENSE_DATA_DIR: '/data',
         },
+      });
+
+      container.addMountPoints({
+        containerPath: '/data',
+        readOnly: false,
+        sourceVolume: 'typesense-data',
       });
 
       container.addPortMappings({
