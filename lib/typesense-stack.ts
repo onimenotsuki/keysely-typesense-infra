@@ -3,9 +3,9 @@ import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
-import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 interface TypesenseStackProps extends cdk.StackProps {
@@ -103,7 +103,7 @@ export class TypesenseStack extends cdk.Stack {
 
       const container = taskDefinition.addContainer('typesense-container', {
         image: ecs.ContainerImage.fromRegistry('typesense/typesense:26.0'),
-        memoryLimitMiB: 900, // t2.micro has 1GB, reserving some for OS/Agent
+        memoryLimitMiB: 768, // Reduced to fit in t3.micro (1024MiB) with overhead
         cpu: 512, // 0.5 vCPU
         logging: ecs.LogDrivers.awsLogs({
           streamPrefix: 'Typesense',
