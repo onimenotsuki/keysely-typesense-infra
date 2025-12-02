@@ -34,9 +34,6 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Synth
-        run: npx cdk synth
-
   deploy-development:
     needs: build
     name: Deploy to Development
