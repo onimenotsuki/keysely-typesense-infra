@@ -46,7 +46,7 @@ export class TypesenseStack extends cdk.Stack {
 
       // Launch Template
       const launchTemplate = new ec2.LaunchTemplate(this, 'typesense-launch-template', {
-        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
+        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
         machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
         userData,
         role: new iam.Role(this, 'typesense-instance-role', {
