@@ -27,7 +27,8 @@ This project is an AWS CDK infrastructure repository for deploying a Typesense c
 ## Architecture Details
 
 - **Compute**:
-  - **Dev/Stage**: ECS on EC2 (t2.micro) using Auto Scaling Group and Launch Template.
+  - **Dev/Stage**: ECS on EC2 (`t3.micro`) using Auto Scaling Group and Launch Template.
+    - Network Mode: `BRIDGE` (uses instance's public IP).
   - **Prod**: ECS on Fargate with Application Load Balancer.
 - **Storage**: Ephemeral (instance store or Fargate ephemeral storage).
 - **Secrets**: API Key stored in AWS Secrets Manager.
@@ -36,5 +37,11 @@ This project is an AWS CDK infrastructure repository for deploying a Typesense c
 ## Key Files
 
 - `bin/app.ts`: Entry point, defines stacks for environments.
+  - Stack Name Pattern: `keysely-typesense-<env>-stack-<region>`
 - `lib/typesense-stack.ts`: Main stack definition.
 - `cdk.json`: CDK configuration.
+
+## Maintenance
+
+> [!IMPORTANT]
+> **ALWAYS update this file (`AGENTS.md`) when making significant changes to the repository architecture, conventions, or setup instructions.**
