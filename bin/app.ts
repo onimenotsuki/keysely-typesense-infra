@@ -5,29 +5,10 @@ import { TypesenseStack } from '../lib/typesense-stack';
 
 const app = new cdk.App();
 
-// Dev Environment
-new TypesenseStack(app, 'TypesenseStack-Dev', {
+new TypesenseStack(app, `typesense-${process.env.CDK_DEFAULT_ENVIRONMENT}-stack`, {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
   },
-  environment: 'dev',
-});
-
-// Stage Environment
-new TypesenseStack(app, 'TypesenseStack-Stage', {
-  env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION,
-  },
-  environment: 'stage',
-});
-
-// Prod Environment
-new TypesenseStack(app, 'TypesenseStack-Prod', {
-  env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION,
-  },
-  environment: 'prod',
+  environment: process.env.CDK_DEFAULT_ENVIRONMENT as 'dev' | 'stage' | 'prod',
 });

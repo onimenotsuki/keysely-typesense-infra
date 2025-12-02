@@ -4,6 +4,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 
 interface TypesenseStackProps extends cdk.StackProps {
@@ -17,13 +18,13 @@ export class TypesenseStack extends cdk.Stack {
     const { environment } = props;
 
     // VPC
-    const vpc = new ec2.Vpc(this, 'TypesenseVpc', {
+    const vpc = new ec2.Vpc(this, 'typesense-vpc', {
       maxAzs: 2,
       natGateways: environment === 'prod' ? 1 : 0, // No NAT Gateway for Dev/Stage to save costs
     });
 
     // Secrets Manager for API Key
-    const apiKeySecret = new secretsmanager.Secret(this, 'TypesenseApiKey', {
+    const apiKeySecret = new secretsmanager.Secret(this, 'typesense-api-key', {
       description: 'API Key for Typesense',
       generateSecretString: {
         secretStringTemplate: JSON.stringify({ apiKey: 'xyz' }), // Default value, should be rotated/changed
@@ -32,18 +33,36 @@ export class TypesenseStack extends cdk.Stack {
     });
 
     // ECS Cluster
-    const cluster = new ecs.Cluster(this, 'TypesenseCluster', {
+    const cluster = new ecs.Cluster(this, 'typesense-cluster', {
       vpc,
     });
 
     if (environment === 'dev' || environment === 'stage') {
       // Free Tier: ECS on EC2 (t2.micro)
 
-      // Auto Scaling Group
-      const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'TypesenseASG', {
-        vpc,
+      // User Data to register with ECS Cluster
+      const userData = ec2.UserData.forLinux();
+      userData.addCommands(`echo ECS_CLUSTER=${cluster.clusterName} >> /etc/ecs/ecs.config`);
+
+      // Launch Template
+      const launchTemplate = new ec2.LaunchTemplate(this, 'typesense-launch-template', {
         instanceType: ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
         machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+        userData,
+        role: new iam.Role(this, 'typesense-instance-role', {
+          assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+          managedPolicies: [
+            iam.ManagedPolicy.fromAwsManagedPolicyName(
+              'service-role/AmazonEC2ContainerServiceforEC2Role',
+            ),
+          ],
+        }),
+      });
+
+      // Auto Scaling Group
+      const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'typesense-asg', {
+        vpc,
+        launchTemplate,
         minCapacity: 1,
         maxCapacity: 1,
         vpcSubnets: {
@@ -53,17 +72,17 @@ export class TypesenseStack extends cdk.Stack {
       });
 
       // Capacity Provider
-      const capacityProvider = new ecs.AsgCapacityProvider(this, 'AsgCapacityProvider', {
+      const capacityProvider = new ecs.AsgCapacityProvider(this, 'asg-capacity-provider', {
         autoScalingGroup,
       });
       cluster.addAsgCapacityProvider(capacityProvider);
 
       // Task Definition
-      const taskDefinition = new ecs.Ec2TaskDefinition(this, 'TypesenseTaskDef', {
+      const taskDefinition = new ecs.Ec2TaskDefinition(this, 'typesense-task-def', {
         networkMode: ecs.NetworkMode.AWS_VPC,
       });
 
-      const container = taskDefinition.addContainer('TypesenseContainer', {
+      const container = taskDefinition.addContainer('typesense-container', {
         image: ecs.ContainerImage.fromRegistry('typesense/typesense:26.0'),
         memoryLimitMiB: 900, // t2.micro has 1GB, reserving some for OS/Agent
         cpu: 512, // 0.5 vCPU
@@ -83,7 +102,7 @@ export class TypesenseStack extends cdk.Stack {
       });
 
       // Service
-      const service = new ecs.Ec2Service(this, 'TypesenseService', {
+      const service = new ecs.Ec2Service(this, 'typesense-service', {
         cluster,
         taskDefinition,
         desiredCount: 1,
@@ -102,7 +121,7 @@ export class TypesenseStack extends cdk.Stack {
       // Production: ECS Fargate
       const loadBalancedFargateService = new ecsPatterns.ApplicationLoadBalancedFargateService(
         this,
-        'TypesenseService',
+        'typesense-service',
         {
           cluster,
           cpu: 512,
