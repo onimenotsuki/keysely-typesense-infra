@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -65,12 +66,9 @@ jobs:
       - name: Check AWS Identity
         run: aws sts get-caller-identity
 
-      # - name: Deploy
-      #   run: |
-      #     if [ "${{ github.ref_name }}" == "main" ]; then
-      #       npx cdk deploy TypesenseStack-Prod --require-approval never
-      #     elif [ "${{ github.ref_name }}" == "stage" ]; then
-      #       npx cdk deploy TypesenseStack-Stage --require-approval never
-      #     else
-      #       npx cdk deploy TypesenseStack-Dev --require-approval never
-      #     fi
+      - name: Deploy
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+        run: npx cdk deploy TypesenseStack-Dev --require-approval never
+
