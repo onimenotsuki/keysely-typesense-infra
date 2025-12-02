@@ -6,9 +6,14 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
+import * as crypto from 'crypto';
 
 interface TypesenseStackProps extends cdk.StackProps {
   environment: 'dev' | 'stage' | 'prod';
+}
+
+function generateApiKey(length = 32) {
+  return crypto.randomBytes(length).toString('hex');
 }
 
 export class TypesenseStack extends cdk.Stack {
@@ -31,7 +36,7 @@ export class TypesenseStack extends cdk.Stack {
     const apiKeySecret = new secretsmanager.Secret(this, 'typesense-api-key', {
       description: 'API Key for Typesense',
       generateSecretString: {
-        secretStringTemplate: JSON.stringify({ apiKey: 'xyz-default-key' }), // Default value, should be rotated
+        secretStringTemplate: JSON.stringify({ apiKey: generateApiKey() }), // Default value, should be rotated
         generateStringKey: 'apiKey',
       },
     });
