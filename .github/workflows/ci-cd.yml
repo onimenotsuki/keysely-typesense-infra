@@ -9,6 +9,7 @@ on:
       - feat/*
       - release/*
       - hotfix/*
+  workflow_dispatch:
 
 permissions:
   id-token: write
